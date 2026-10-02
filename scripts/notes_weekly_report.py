@@ -29,7 +29,7 @@ from synaptica.backend.streamlit_functions.calls_access import (
 
 
 TEAMS = (
-    ("fi", "FI", "fi_interaction_records"),
+    ("fi", "FI", "fi_notes_records"),
     ("corp", "Корпы", "corp_notes_records"),
     ("commodity", "Comdty", "commodity_notes_records"),
 )
@@ -158,11 +158,25 @@ def fmt_avg(value) -> str:
     return f"{number:.2f}".replace(".", ",")
 
 
-def _record_kind(src: dict) -> str:
+def _activity_side(src: dict) -> str:
+    """Поле activity_side. Если его ещё нет — мероприятие и клиент «внутренняя» внутренние."""
+    raw = str(src.get("activity_side") or "").strip().lower()
+    if raw in {"внутренний", "внешний"}:
+        return raw
     rt = str(src.get("record_type") or "").strip().lower()
-    if rt == "мероприятие":
+    client = str(src.get("client_name_norm") or src.get("client_name_raw") or "").strip().lower()
+    if rt == "мероприятие" or client == "внутренняя":
+        return "внутренний"
+    if rt:
+        return "внешний"
+    return ""
+
+
+def _record_kind(src: dict) -> str:
+    side = _activity_side(src)
+    if side == "внутренний":
         return "adjacent"
-    if rt == "потребность":
+    if side == "внешний":
         return "client"
     return "other"
 
@@ -232,6 +246,7 @@ def _note_item(src: dict, minutes) -> dict:
         "start": str(src.get("meeting_start") or "").strip()[:5],
         "kind": {"client": "клиентская", "adjacent": "смежники"}.get(kind, "прочее"),
         "bucket": kind,
+        "side": _activity_side(src),
         "contact": contact,
         "minutes": int(minutes or 0),
         # В индексе клиент лежит в client_name_norm / client_name_raw; client — только в ответе API.

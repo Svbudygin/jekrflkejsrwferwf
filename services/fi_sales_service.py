@@ -102,7 +102,7 @@ def _teams() -> dict[str, NotesTeam]:
     return {
         "fi": NotesTeam(
             "fi",
-            os.environ.get("FI_OS_INDEX", "fi_interaction_records"),
+            os.environ.get("FI_OS_INDEX", "fi_notes_records"),
             "fi_calls.xlsx",
             "fi_records.jsonl",
         ),
@@ -153,7 +153,7 @@ OPENSEARCH_CA_CERTS = "/tmp/opensearch-certs/opensearch/ca"
 OPENSEARCH_CLIENT_CERT = "/tmp/opensearch-certs/opensearch/elastic.cert"
 OPENSEARCH_CLIENT_KEY = "/tmp/opensearch-certs/opensearch/elastic.key"
 
-FI_INDEX_NAME = os.environ.get("FI_OS_INDEX", "fi_interaction_records")
+FI_INDEX_NAME = os.environ.get("FI_OS_INDEX", "fi_notes_records")
 
 _NOTES_INDEX_BODY = {
     "mappings": {
@@ -174,6 +174,7 @@ _NOTES_INDEX_BODY = {
             "next_step": {"type": "text"},
             "status": {"type": "keyword"},
             "created_by": {"type": "keyword"},
+            "activity_side": {"type": "keyword"},
         }
     },
 }
@@ -1025,6 +1026,10 @@ def _format_record(rec: dict) -> dict:
         ),
         "created_by": rec.get("created_by") or "",
         "created_at": rec.get("created_at") or "",
+        "activity_side": rec.get("activity_side") or _activity_side(
+            rec.get("record_type"),
+            rec.get("client_name_norm") or rec.get("client_name_raw"),
+        ),
         "fi_desk": _record_fi_desk(rec) if (rec.get("team") or "fi") == "fi" else "",
         "team": rec.get("team") or "",
     }
@@ -1039,9 +1044,7 @@ def _clean_actor(value: str | None) -> str:
 
 
 def ensure_notes_index(index: str) -> None:
-    """Создаёт пустой индекс команды. Индекс FI не трогает."""
-    if index == FI_INDEX_NAME:
-        return
+    """Создаёт пустой индекс команды, если его ещё нет. Существующий не пересоздаёт."""
     client = get_os_client()
     if client.indices.exists(index=index):
         return
@@ -1201,6 +1204,14 @@ def _display_record_type(value: str | None) -> str:
     if rt in _EVENT_TYPE_ALIASES:
         return RECORD_TYPE_EVENT
     return RECORD_TYPE_NEED
+
+
+def _activity_side(record_type: str | None, client_name: str | None) -> str:
+    """внутренний — мероприятие или клиент «внутренняя», иначе внешний."""
+    client = str(client_name or "").strip().lower()
+    if _display_record_type(record_type) == RECORD_TYPE_EVENT or client == INTERNAL_EVENT_CLIENT:
+        return "внутренний"
+    return "внешний"
 
 
 def _record_type_search_values(value: str) -> list[str]:
@@ -1566,6 +1577,7 @@ def save_note(
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
         "fi_desk": fi_desk if cfg.id == "fi" else "",
+        "activity_side": _activity_side(rt, client_canonical),
     }
 
     _index_record(record_id, rec, cfg.index)
@@ -1810,6 +1822,10 @@ def update_note(record_id: str, team: str, patches: dict, actor: str) -> dict:
         if str(rec.get("meeting_end") or "").strip():
             rec["meeting_end"] = _hhmm(rec["meeting_end"])
 
+    rec["activity_side"] = _activity_side(
+        rec.get("record_type"),
+        rec.get("client_name_norm") or rec.get("client_name_raw"),
+    )
     rec["updated_at"] = _now_iso()
     _index_record(record_id, rec, cfg.index)
     try:

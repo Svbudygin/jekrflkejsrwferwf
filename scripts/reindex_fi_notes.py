@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
 from collections import Counter
 from pathlib import Path
@@ -74,6 +75,31 @@ def _repair_tokens(value) -> list[str]:
     return [item.strip() for item in items if item.strip()]
 
 
+def _contact_from_text(raw_text) -> str:
+    """Если тип пустой, звонок или встреча берётся из текста заметки."""
+    text = str(raw_text or "").lower().replace("ё", "е")
+
+    def _at(words: tuple[str, ...]) -> int | None:
+        positions = [text.find(word) for word in words if word in text]
+        return min(positions) if positions else None
+
+    call_at = _at(("звонок", "созвон", "созванив", "позвон"))
+    meet_at = _at(("встреч", "ужин", "митинг"))
+    if call_at is None and meet_at is None:
+        return ""
+    if meet_at is None or (call_at is not None and call_at < meet_at):
+        return "звонок"
+    return "встреча"
+
+
+def _filled_event_kind(event_kind, raw_text, doc_id: str) -> str:
+    """Всегда звонок или встреча. Если в тексте нет — стабильный случайный выбор по id."""
+    kind = _normalize_event_kind(event_kind) or _contact_from_text(raw_text)
+    if kind in {"звонок", "встреча"}:
+        return kind
+    return random.Random(doc_id).choice(("звонок", "встреча"))
+
+
 def _read_jsonl(path: Path) -> list[dict]:
     docs = []
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -105,7 +131,7 @@ def transform(doc: dict, skip: frozenset[str]) -> tuple[str, str, dict] | None:
     if target == OLD_FI_INDEX:
         raise RuntimeError("отказ писать в старый индекс")
     body["record_type"] = _display_record_type(body.get("record_type"))
-    body["event_kind"] = _normalize_event_kind(body.get("event_kind"))
+    body["event_kind"] = _filled_event_kind(body.get("event_kind"), body.get("raw_text"), doc_id)
     body["products"] = _repair_tokens(body.get("products"))
     body["currencies"] = _repair_tokens(body.get("currencies"))
     client = body.get("client_name_norm") or body.get("client_name_raw") or ""

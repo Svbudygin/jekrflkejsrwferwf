@@ -232,15 +232,44 @@ def _bank_people(src: dict) -> str:
     return ", ".join(names)
 
 
+def _contact_kind(src: dict) -> str:
+    """Колонка «Тип»: только звонок или встреча. Пустой event_kind берётся из текста заметки."""
+    raw = str(src.get("event_kind") or "").strip().lower().replace("ё", "е")
+    aliases = {
+        "звонок": "звонок",
+        "call": "звонок",
+        "созвон": "звонок",
+        "встреча": "встреча",
+        "митинг": "встреча",
+        "meeting": "встреча",
+        "конференция": "встреча",
+        "гемба": "встреча",
+        "мероприятие": "встреча",
+    }
+    if raw in aliases:
+        return aliases[raw]
+    text = str(src.get("raw_text") or "").lower().replace("ё", "е")
+
+    def _at(words: tuple[str, ...]) -> int | None:
+        positions = [text.find(word) for word in words if word in text]
+        return min(positions) if positions else None
+
+    call_at = _at(("звонок", "созвон", "созванив", "позвон"))
+    meet_at = _at(("встреч", "ужин", "митинг"))
+    if call_at is None and meet_at is None:
+        return ""
+    if meet_at is None or (call_at is not None and call_at < meet_at):
+        return "звонок"
+    return "встреча"
+
+
 def _note_item(src: dict, minutes) -> dict:
     kind = _record_kind(src)
     products = src.get("products")
     if isinstance(products, list):
         products = ", ".join(str(x) for x in products if x)
     when = str(src.get("interaction_date") or src.get("date") or src.get("created_at") or "")
-    contact = str(src.get("event_kind") or "").strip().lower()
-    if contact not in {"звонок", "встреча"}:
-        contact = ""
+    contact = _contact_kind(src)
     return {
         "date": when[:10],
         "start": str(src.get("meeting_start") or "").strip()[:5],

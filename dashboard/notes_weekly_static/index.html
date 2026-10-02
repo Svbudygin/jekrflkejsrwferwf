@@ -358,11 +358,22 @@
 
     const NOTE_COLS = ["Дата", "Тип", "Контрагент", "Участники от банка", "Длительность", "Заметка"];
 
+    function contactOf(n) {
+      if (n.contact === "звонок" || n.contact === "встреча") return n.contact;
+      const text = String(n.text || "").toLowerCase().replaceAll("ё", "е");
+      const at = (words) => {
+        const hits = words.map((word) => text.indexOf(word)).filter((i) => i >= 0);
+        return hits.length ? Math.min(...hits) : -1;
+      };
+      const callAt = at(["звонок", "созвон", "созванив", "позвон"]);
+      const meetAt = at(["встреч", "ужин", "митинг"]);
+      if (callAt < 0 && meetAt < 0) return "";
+      if (meetAt < 0 || (callAt >= 0 && callAt < meetAt)) return "звонок";
+      return "встреча";
+    }
+
     function fieldValue(n, key) {
-      if (key === "kind") {
-        if (n.contact === "звонок" || n.contact === "встреча") return n.contact;
-        return "—";
-      }
+      if (key === "kind") return contactOf(n) || "—";
       return "";
     }
 

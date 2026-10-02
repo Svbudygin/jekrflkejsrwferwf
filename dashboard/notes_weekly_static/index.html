@@ -361,15 +361,9 @@
     function fieldValue(n, key) {
       if (key === "kind") {
         if (n.contact === "звонок" || n.contact === "встреча") return n.contact;
-        return n.kind || "—";
+        return "—";
       }
       return "";
-    }
-
-    function noteType(n) {
-      const side = n.side === "внутренний" || n.side === "внешний" ? n.side : "";
-      const contact = n.contact === "звонок" || n.contact === "встреча" ? n.contact : "";
-      return [side, contact].filter(Boolean).join(" · ") || fieldValue(n, "kind");
     }
 
     // Горит хотя бы одна из «Звонок» / «Встреча»; обе — без фильтра.
@@ -389,7 +383,7 @@
         const cells = stats.map((value, k) => `
             <td><span class="stats">${value}</span><span class="heads">${esc(NOTE_COLS[k])}</span></td>`).join("");
         const notes = items.map((n) => {
-          const kind = noteType(n);
+          const kind = fieldValue(n, "kind");
           const when = noteDate(n);
           return `
           <tr class="note-row" data-for="${pid}" ${open ? "" : "hidden"}>

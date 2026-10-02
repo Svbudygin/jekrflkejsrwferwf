@@ -263,6 +263,15 @@ def _contact_kind(src: dict) -> str:
     return "встреча"
 
 
+def _meeting_sort_key(item: dict) -> tuple[str, str]:
+    """Дата встречи, затем время начала. Пустая дата уходит в конец при сортировке по убыванию."""
+    date = str(item.get("date") or "")[:10]
+    start = str(item.get("start") or "").strip()
+    if len(date) < 10 or date == "0000-00-00":
+        return ("", "")
+    return (date, start or "00:00")
+
+
 def _note_item(src: dict, minutes) -> dict:
     kind = _record_kind(src)
     products = src.get("products")
@@ -405,7 +414,7 @@ def build_report(now=None, date_from=None, date_to=None) -> dict:
             "external_minutes": row["external_minutes"],
             "meetings": len(row["durations"]),
             "avg_minutes": _avg(row["durations"]),
-            "items": row["items"],
+            "items": sorted(row["items"], key=_meeting_sort_key, reverse=True),
         }
         for row in people.values()
     ]

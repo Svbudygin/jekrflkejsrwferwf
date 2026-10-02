@@ -300,9 +300,24 @@
     let report = null;
     let mode = 1;
 
+    function byMeetingDesc(a, b) {
+      const stamp = (n) => {
+        const date = String(n.date || "");
+        if (!/^\d{4}-\d{2}-\d{2}/.test(date)) return "";
+        const start = String(n.start || "").trim();
+        return date.slice(0, 10) + "T" + (start || "00:00");
+      };
+      const left = stamp(a);
+      const right = stamp(b);
+      if (!left && !right) return 0;
+      if (!left) return 1;
+      if (!right) return -1;
+      return right.localeCompare(left);
+    }
+
     function viewPeople() {
       return (report.people || []).map((p) => {
-        const items = (p.items || []).filter(notePasses);
+        const items = (p.items || []).filter(notePasses).sort(byMeetingDesc);
         let client = 0, adjacent = 0, external = 0;
         for (const n of items) {
           if (n.bucket === "client") {

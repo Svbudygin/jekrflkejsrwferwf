@@ -631,6 +631,46 @@ _FINRAG_SKILL_LABELS: dict[str, str] = {
 }
 
 
+def _notes_exec_status_label(cmd: str) -> str | None:
+    """curl к сервису заметок (18003) или `date` — понятный лейбл. Иначе None."""
+    import re
+
+    if re.match(r"\s*date\b", cmd):
+        return "Сверяю сегодняшнюю дату"
+    url_match = re.search(r"https?://[^\s'\"]+", cmd)
+    if not url_match or ":18003" not in url_match.group():
+        return None
+    path = url_match.group().split("?")[0].rstrip("/")
+    method_match = re.search(r"(?:-X|--request)\s+([A-Z]+)", cmd)
+    method = method_match.group(1) if method_match else ("POST" if re.search(r"\s(?:-d|--data)\b", cmd) else "GET")
+    client_match = re.search(r'"(?:clients|names)"\s*:\s*\[\s*"([^"]{1,30})"', cmd) or re.search(
+        r'"client_canonical"\s*:\s*"([^"]{1,30})"', cmd
+    )
+    # Названия клиентов не склоняем: «по клиенту Совкомбанк».
+    about = f" по клиенту {client_match.group(1)}" if client_match else ""
+    if path.endswith("/clients"):
+        return "Сверяю клиента со справочником"
+    if path.endswith("/products"):
+        return "Сверяю продукты"
+    if path.endswith("/records/search"):
+        return f"Ищу заметки{about}" if about else "Ищу заметки в базе"
+    if path.endswith("/records/count"):
+        return f"Считаю заметки{about}"
+    if path.endswith("/records/export"):
+        return "Готовлю выгрузку в Excel"
+    if path.endswith("/records"):
+        return f"Сохраняю заметку{about}"
+    if re.search(r"/records/[^/]+$", path):
+        if method == "DELETE":
+            return "Удаляю заметку"
+        if method in ("PATCH", "PUT", "POST"):
+            return "Обновляю заметку"
+        return "Открываю заметку"
+    if path.endswith("/health"):
+        return "Проверяю сервис заметок"
+    return "Обращаюсь к базе заметок"
+
+
 def _finrag_exec_status_label(cmd: str) -> str | None:
     """Если cmd — curl к finrag API, возвращает понятный лейбл. Иначе None."""
     import re
@@ -852,6 +892,9 @@ def _openclaw_tool_status_label(name: str, args_json: str) -> str:
             m = _re.search(r'"command"\s*:\s*"(.*)', args_json, _re.DOTALL)
             if m:
                 cmd = m.group(1).rstrip('\\"').replace('\\"', '"')
+        notes_label = _notes_exec_status_label(cmd)
+        if notes_label:
+            return notes_label
         finrag_label = _finrag_exec_status_label(cmd)
         if finrag_label:
             return finrag_label
@@ -1226,7 +1269,7 @@ NOTES_EDIT_ID_KEY = "notes_edit_id"
 NOTES_DELETE_ID_KEY = "notes_delete_id"
 NOTES_EDIT_FLASH_KEY = "notes_edit_flash"
 NOTES_PAGE_KEY = "notes_list_page"
-NOTES_PAGE_SIZE = 10
+NOTES_PAGE_SIZE = 5
 
 
 def _active_notes_team() -> str | None:
@@ -1236,9 +1279,10 @@ def _active_notes_team() -> str | None:
 
 
 _NOTES_LIST_RE = re.compile(
-    r"<!--\s*NOTES_LIST(?:\s+ids=([0-9A-Za-z_,.\-]*))?\s*-->",
+    r"<!--\s*NOTES_LIST(?:\s+ids=([0-9A-Za-z_,.\-\s]*?))?\s*-->",
     re.IGNORECASE,
 )
+_NOTES_LIST_OPEN_RE = re.compile(r"<!--\s*NOTES_LIST[\s\S]*$", re.IGNORECASE)
 
 
 def _notes_list_marked(text: str) -> bool:
@@ -1250,7 +1294,7 @@ def _notes_list_ids(text: str) -> list[str]:
     if not found or not found.group(1):
         return []
     ids: list[str] = []
-    for part in found.group(1).split(","):
+    for part in found.group(1).replace("\n", ",").split(","):
         rid = part.strip()
         if rid and rid not in ids:
             ids.append(rid)
@@ -1258,7 +1302,9 @@ def _notes_list_ids(text: str) -> list[str]:
 
 
 def _strip_notes_list_marker(text: str) -> str:
-    return _NOTES_LIST_RE.sub("", str(text or "")).strip()
+    cleaned = _NOTES_LIST_RE.sub("", str(text or ""))
+    cleaned = _NOTES_LIST_OPEN_RE.sub("", cleaned)
+    return cleaned.strip()
 
 
 def _notes_is_preview(text: str) -> bool:
@@ -1632,6 +1678,35 @@ def _notes_edit_form(record: dict, team: str) -> None:
     st.rerun()
 
 
+def _notes_parse_stamp(value: str) -> datetime | None:
+    raw = str(value or "").strip()
+    for fmt, size in (("%Y-%m-%dT%H:%M:%S", 19), ("%Y-%m-%d", 10)):
+        try:
+            return datetime.strptime(raw[:size], fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _notes_list_order(records: list) -> list:
+    """Сначала внесённые за последние сутки по времени записи, потом остальные по дате встречи."""
+    now = datetime.now()
+    recent: list = []
+    older: list = []
+    for rec in records:
+        created = _notes_parse_stamp(rec.get("created_at"))
+        if created is not None and (now - created) <= timedelta(days=1):
+            recent.append(rec)
+        else:
+            older.append(rec)
+    recent.sort(key=lambda rec: _notes_parse_stamp(rec.get("created_at")) or datetime.min, reverse=True)
+    older.sort(
+        key=lambda rec: str(rec.get("date") or rec.get("interaction_date") or "0000-00-00"),
+        reverse=True,
+    )
+    return recent + older
+
+
 def render_notes_records_panel() -> None:
     """Карточки записей последнего поиска с кнопкой «Редактировать»."""
     team = _active_notes_team()
@@ -1641,7 +1716,7 @@ def render_notes_records_panel() -> None:
     if not ctx or ctx.get("team") != team or not ctx.get("records"):
         return
 
-    records = list(ctx["records"])
+    records = _notes_list_order(list(ctx["records"]))
     pages = max(1, (len(records) + NOTES_PAGE_SIZE - 1) // NOTES_PAGE_SIZE)
     page = int(st.session_state.get(NOTES_PAGE_KEY) or 0)
     if page < 0 or page >= pages:
@@ -1781,8 +1856,8 @@ def _render_notes_record_cards(records: list, team: str, edit_id: str, delete_id
         text = str(record.get("raw_text") or "").strip()
         can_edit = _notes_can_edit(record)
         kind = str(record.get("event_kind") or "").strip()
-        if kind in ("конференция", "гемба", "gemba"):
-            kind = "мероприятие"
+        if kind.lower() in ("конференция", "гемба", "gemba", "мероприятие", "кетчап", "кетчуп"):
+            kind = "встреча"
         rtype = str(record.get("record_type") or "").strip()
         title = kind or ("мероприятие" if rtype == "мероприятие" else client)
         if rtype == "мероприятие":
@@ -1896,7 +1971,38 @@ def _openclaw_active_tool_progress_label(
     return None
 
 
-def _openclaw_idle_progress_label(agent_id: str, user_input: str) -> str:
+# Подпись спиннера сменяется раз в шаг, чтобы не висеть на одной фразе.
+_OPENCLAW_PROGRESS_STEP_SEC = 2.5
+_OPENCLAW_WAIT_PHRASES: dict[str, tuple[str, ...]] = {
+    "fi-sales": (
+        "Разбираю запрос",
+        "Смотрю, что нужно сделать",
+        "Прикидываю, где искать",
+        "Сверяюсь с правилами заметок",
+        "Продумываю следующий шаг",
+    ),
+}
+_OPENCLAW_WAIT_DEFAULT = ("Разбираю запрос", "Думаю над запросом", "Собираю контекст", "Продумываю следующий шаг")
+_OPENCLAW_AFTER_TOOL_PHRASES = ("Разбираю результат", "Смотрю, что нашлось", "Сверяю детали", "Решаю, что дальше")
+_OPENCLAW_ANSWER_PHRASES = ("Формирую ответ", "Собираю ответ", "Проверяю формулировки", "Почти готово")
+_OPENCLAW_TOOL_TAILS = ("", " — жду результат", " — ещё немного")
+
+
+def _openclaw_rotating(phrases: tuple[str, ...], elapsed: float) -> str:
+    step = int(max(elapsed, 0.0) // _OPENCLAW_PROGRESS_STEP_SEC)
+    return f"🦞 {phrases[step % len(phrases)]}…"
+
+
+def _openclaw_rotating_tool(base: str, elapsed: float) -> str:
+    """base — «🦞 Ищу заметки…»; долгую команду дополняем, чтобы подпись жила."""
+    step = int(max(elapsed, 0.0) // _OPENCLAW_PROGRESS_STEP_SEC)
+    tail = _OPENCLAW_TOOL_TAILS[step % len(_OPENCLAW_TOOL_TAILS)]
+    if not tail:
+        return base
+    return base[:-1] + tail + "…" if base.endswith("…") else base + tail
+
+
+def _openclaw_idle_progress_label(agent_id: str, user_input: str, elapsed: float = 0.0) -> str:
     """Пока агент думает и tool-событий ещё нет."""
     snippet = (user_input or "").strip()[:35]
     if agent_id == "pres-gen":
@@ -1907,7 +2013,7 @@ def _openclaw_idle_progress_label(agent_id: str, user_input: str) -> str:
         if snippet:
             return f"🦞 Изучаю запрос: `{snippet}`"
         return "🦞 Изучаю документы"
-    return "🦞 Получаю ответ от агента…"
+    return _openclaw_rotating(_OPENCLAW_WAIT_PHRASES.get(agent_id, _OPENCLAW_WAIT_DEFAULT), elapsed)
 
 
 def _call_openclaw_streaming(
@@ -2048,12 +2154,26 @@ def _call_openclaw_streaming(
                 unsafe_allow_html=True,
             )
 
+        _shown_label: list[str] = [""]
+        _phase = {"key": None, "since": _time.time()}
+        _started_at = _time.time()
+
+        def _phase_elapsed(key) -> float:
+            if _phase["key"] != key:
+                _phase["key"] = key
+                _phase["since"] = _time.time()
+            return _time.time() - _phase["since"]
+
         def _update_progress(
             label: str,
             *,
             prog_state: str | None = None,
             expanded: bool | None = None,
         ) -> None:
+            if prog_state is None and expanded is None:
+                if label == _shown_label[0]:
+                    return
+                _shown_label[0] = label
             if show_tool_details and status is not None:
                 kwargs = {"label": label}
                 if prog_state is not None:
@@ -2090,8 +2210,6 @@ def _call_openclaw_streaming(
                     sse_active_id=current_tool_id,
                 )
                 has_new = len(_log_tool_calls) != _last_seen_count
-                if not has_new and not force and not active_label:
-                    return
                 if has_new:
                     _last_seen_count = len(_log_tool_calls)
                     log_md = _render_log_tools()
@@ -2101,23 +2219,19 @@ def _call_openclaw_streaming(
                         except Exception:
                             pass
                 if active_label:
-                    _update_progress(active_label)
+                    _update_progress(_openclaw_rotating_tool(active_label, _phase_elapsed(("tool", active_label))))
                     _stream_label_state = "tool"
                     return
                 if _stream_label_state == "answering":
+                    _update_progress(_openclaw_rotating(_OPENCLAW_ANSWER_PHRASES, _phase_elapsed("answering")))
                     return
                 if _stream_label_state in ("connected", "init") and not _log_tool_calls:
-                    _update_progress(_openclaw_idle_progress_label(agent_id, user_input))
+                    _update_progress(_openclaw_idle_progress_label(agent_id, user_input, _time.time() - _started_at))
                     return
-                last_call = next(
-                    (ev for ev in reversed(_log_tool_calls) if ev.get("event") == "tool_call"),
-                    None,
-                )
-                if not last_call:
+                if not any(ev.get("event") == "tool_call" for ev in _log_tool_calls):
                     return
-                _name = last_call.get("tool", "")
-                _detail = last_call.get("detail", "") or ""
-                _update_progress(f"🦞 {_openclaw_tool_status_label(_name, _detail)}…")
+                # Инструмент отработал, агент думает над результатом.
+                _update_progress(_openclaw_rotating(_OPENCLAW_AFTER_TOOL_PHRASES, _phase_elapsed(("after", len(_log_tool_calls)))))
                 _stream_label_state = "tool"
 
         def _maybe_show_answering_progress() -> None:
@@ -2131,7 +2245,7 @@ def _call_openclaw_streaming(
                 _update_progress(active_label)
                 _stream_label_state = "tool"
             elif _stream_label_state != "answering":
-                _update_progress("🦞 Формирую ответ…")
+                _update_progress(_openclaw_rotating(_OPENCLAW_ANSWER_PHRASES, _phase_elapsed("answering")))
                 _stream_label_state = "answering"
 
         # UI обновляем только из основного потока (между SSE-чанками).
@@ -2201,7 +2315,7 @@ def _call_openclaw_streaming(
                         if not _first_sse_seen:
                             _first_sse_seen = True
                             if _stream_label_state == "init":
-                                _update_progress(_openclaw_idle_progress_label(agent_id, user_input))
+                                _update_progress(_openclaw_idle_progress_label(agent_id, user_input, _time.time() - _started_at))
                                 _stream_label_state = "connected"
 
                         _refresh_from_tool_log()
@@ -2242,7 +2356,7 @@ def _call_openclaw_streaming(
                             if _content:
                                 full_response += _content
                                 _maybe_show_answering_progress()
-                                answer_placeholder.markdown(full_response + "▌")
+                                answer_placeholder.markdown(_strip_notes_list_marker(full_response) + "▌")
                             if _choice.get("finish_reason"):
                                 stream_done = True
                                 break
@@ -2296,7 +2410,7 @@ def _call_openclaw_streaming(
                             if delta:
                                 full_response += delta
                                 _maybe_show_answering_progress()
-                                answer_placeholder.markdown(full_response + "▌")
+                                answer_placeholder.markdown(_strip_notes_list_marker(full_response) + "▌")
 
             _refresh_from_tool_log(force=True)
             _time.sleep(0.3)
@@ -2587,14 +2701,12 @@ FI_NOTES_WELCOME = (
     "📋 🦞 **FI Notes — режим включён.**\n\n"
     "Заносите заметки о встречах и звонках — я сохраню их и найду историю по клиенту.\n\n"
     "**Обязательные поля:**\n"
-    "1. **Дата** встречи или звонка\n"
-    "2. **Время** — начало и конец (длительность посчитаю сам)\n"
-    "3. **Контрагент** — клиент или внутренняя команда\n"
-    "4. **Продукт** — IRS, NDF, XCCY, форвард…\n"
-    "5. **Валюта** — USD, RUB, CNY…\n"
-    "6. **Тип** — встреча или звонок\n"
-    "7. **Участники** — кто был на встрече\n\n"
-    "Чего не хватит — спрошу одним списком.\n\n"
+    "1. **Дата** *(вчера, 22 сентября)*\n"
+    "2. **Время начала** *(11:00, в два часа дня)*\n"
+    "3. **Длительность** *(1 час, полдня)*\n"
+    "4. **Тип** *(звонок, встреча)*\n"
+    "5. **Контрагент** — клиент *(ВТБ)*, наименование подразделения Банка *(ДКК)*\n"
+    "6. **Участники** со стороны банка *(Иванов, Сидоров)*\n\n"
     "Редактировать и удалять свою заметку можно в течение 24 часов после внесения."
 )
 
@@ -2607,9 +2719,15 @@ def write_openclaw_fi_sales_start(
     show_user_msg: bool = True,
 ) -> None:
     st.session_state.pop(FI_NOTES_TABLE_CTX_KEY, None)
+    welcome = FI_NOTES_WELCOME
+    if normalize_username(st.session_state.get("username")) == "svbudygin":
+        welcome += (
+            "\n\n[Статистика активностей всех сейлз ЦА]"
+            "(https://synaptica.delta.sbrf.ru:3333/)"
+        )
     _openclaw_start_impl(
         command=command,
-        welcome_msg=FI_NOTES_WELCOME,
+        welcome_msg=welcome,
         mode_key="openclaw_fi_sales_mode",
         hist_key="openclaw_fi_sales_chat_history",
         pipeline="openclaw_fi_sales",

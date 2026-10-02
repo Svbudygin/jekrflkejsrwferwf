@@ -1153,7 +1153,7 @@ _LEGACY_NEED_TYPES = frozenset({"взаимодействие", "interaction", "
 _EVENT_TYPE_ALIASES = frozenset({
     RECORD_TYPE_EVENT, "конференция", "гемба", "gemba", "event",
 })
-EVENT_KINDS = frozenset({"звонок", "встреча", "мероприятие"})
+EVENT_KINDS = frozenset({"звонок", "встреча"})
 INTERNAL_EVENT_CLIENT = "внутренняя"
 
 
@@ -1170,22 +1170,28 @@ def _normalize_record_type(value: str | None) -> str:
 
 
 def _normalize_event_kind(value: str | None) -> str:
+    """Только звонок или встреча. Пустое и неизвестное — пустая строка."""
     raw = "_".join(str(value or "").strip().lower().split())
+    if not raw:
+        return ""
     aliases = {
         "звонок": "звонок",
         "call": "звонок",
+        "созвон": "звонок",
         "встреча": "встреча",
         "митинг": "встреча",
         "meeting": "встреча",
-        "конференция": "мероприятие",
-        "гемба": "мероприятие",
-        "gemba": "мероприятие",
-        "мероприятие": "мероприятие",
+        "конференция": "встреча",
+        "гемба": "встреча",
+        "gemba": "встреча",
+        "кетчап": "встреча",
+        "кетчуп": "встреча",
+        "catch-up": "встреча",
+        "catchup": "встреча",
+        "catch_up": "встреча",
+        "мероприятие": "встреча",
     }
-    kind = aliases.get(raw, raw)
-    if kind not in EVENT_KINDS:
-        return "мероприятие"
-    return kind
+    return aliases.get(raw, "")
 
 
 def _display_record_type(value: str | None) -> str:
@@ -1433,15 +1439,6 @@ def _clean_participants(names: list[str] | None) -> list[str]:
     return out
 
 
-def _text_with_participants(raw_text: str, participants: list[str]) -> str:
-    if not participants:
-        return raw_text
-    line = "Участники: " + ", ".join(participants)
-    if line.casefold() in raw_text.casefold():
-        return raw_text
-    return raw_text.rstrip() + "\n" + line
-
-
 def _copy_note_to_participants(
     participants: list[str],
     actor: str,
@@ -1501,6 +1498,8 @@ def save_note(
     )
     if rt_early == RECORD_TYPE_EVENT:
         kind = _normalize_event_kind(event_kind)
+        if kind not in EVENT_KINDS:
+            raise ValueError("спроси: встреча или звонок")
     elif rt_early == RECORD_TYPE_NEED:
         kind = _need_contact_kind(event_kind)
     else:
@@ -1516,7 +1515,6 @@ def save_note(
     rt = rt_early
     actor = _clean_actor(created_by)
     people = _clean_participants(participants)
-    raw_text = _text_with_participants(raw_text, people)
     products = _canonicalize_stored_products(_canonical_products(products, cfg.id), raw_text)
     stored_direction: list[str] = []
     for item in directions or []:
@@ -1544,7 +1542,7 @@ def save_note(
         "direction_column": None,
         "splitter_raw_block": raw_text,
         "raw_text": raw_text,
-        "short_summary": summary,
+        "short_summary": "",
         "currencies": currencies or [],
         "products": products or [],
         "economic_direction": stored_direction,
@@ -1760,8 +1758,8 @@ def update_note(record_id: str, team: str, patches: dict, actor: str) -> dict:
             raise ValueError("текст заметки не может быть пустым")
         rec["raw_text"] = text
         rec["splitter_raw_block"] = text
-    if patches.get("summary") is not None:
-        rec["short_summary"] = str(patches["summary"]).strip()
+        rec["short_summary"] = ""
+    patches.pop("summary", None)
     if patches.get("next_step") is not None:
         rec["next_step"] = str(patches["next_step"]).strip()
     if patches.get("products") is not None:
@@ -1773,7 +1771,10 @@ def update_note(record_id: str, team: str, patches: dict, actor: str) -> dict:
             rec[key] = str(patches[key]).strip()
 
     if patches.get("event_kind") is not None and rec.get("record_type") == RECORD_TYPE_EVENT:
-        rec["event_kind"] = _normalize_event_kind(patches.get("event_kind"))
+        kind = _normalize_event_kind(patches.get("event_kind"))
+        if kind not in EVENT_KINDS:
+            raise ValueError("спроси: встреча или звонок")
+        rec["event_kind"] = kind
     if rec.get("record_type") == RECORD_TYPE_NEED:
         if not str(rec.get("interaction_date") or "").strip():
             raise ValueError("спроси дату встречи")

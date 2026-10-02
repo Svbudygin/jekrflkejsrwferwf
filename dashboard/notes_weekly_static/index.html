@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache">
+  <title>Активности сейлз команд</title>
+  <style>
+    :root {
+      --ink: #1a1d23;
+      --muted: #6b7280;
+      --line: #eceef2;
+      --head: #3f4654;
+      --team: #e4e9f0;
+      --bg: #f6f7f9;
+      --card: #fff;
+      --hover: #f3f5f8;
+      --red: #c0122c;
+    }
+    * { box-sizing: border-box; }
+    html { overflow-x: clip; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.45 "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 24px 72px; }
+    .top {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: var(--bg);
+      margin: 0 -24px 16px;
+      padding: 0 24px 12px;
+    }
+    h1 { margin: 0 0 12px; font-size: 26px; font-weight: 640; letter-spacing: -.03em; }
+    .sub { color: var(--muted); margin: 0; font-size: 14px; }
+    .bar { display: flex; align-items: center; gap: 10px; margin: 0; flex-wrap: nowrap; }
+    .period { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
+    .period input[type="date"] {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 6px 8px;
+      font: inherit;
+      font-size: 14px;
+    }
+    .modes { display: flex; gap: 8px; margin: 0; flex: 0 0 auto; }
+    .modes button {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .modes button.on { background: var(--head); color: #fff; border-color: var(--head); }
+    button.linkish {
+      background: none; border: 0; color: inherit; font: inherit; font-weight: 600;
+      padding: 0; cursor: pointer; text-align: left;
+    }
+    button.linkish:hover { color: #2563eb; }
+    .card {
+      background: var(--card);
+      border-radius: 20px;
+      box-shadow: 0 -6px 18px rgba(16, 24, 40, .05), 0 1px 2px rgba(16, 24, 40, .04), 0 12px 32px rgba(16, 24, 40, .05);
+      overflow: visible;
+    }
+      table.sheet {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      min-width: 920px;
+    }
+    table.sheet > thead > tr > th,
+    table.sheet > tbody > tr > td {
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      padding: 14px 16px;
+      text-align: center;
+      vertical-align: middle;
+    }
+    table.sheet > thead > tr > th {
+      position: sticky;
+      top: var(--pin, 0px);
+      z-index: 4;
+      background: #f8f9fb;
+      color: var(--head);
+      font-weight: 650;
+      font-size: 13px;
+      letter-spacing: .01em;
+      text-align: center;
+    }
+    table.sheet > tbody > tr > td.left,
+    table.sheet > thead > tr > th:first-child { text-align: left; }
+    table.sheet > tbody:last-child > tr:last-child > td { border-bottom: 0; }
+    tr.team { cursor: pointer; background: var(--team); font-weight: 600; }
+    tr.team > td { background: var(--team); }
+    tr.team.stuck > td { position: relative; z-index: 3; }
+    tr.person.stuck > td { position: relative; z-index: 2; background: #fff; }
+    tr.person { cursor: pointer; background: #fff; }
+    tr.note-row td { background: #fff; }
+    tr.team:hover,
+    tr.team:hover > td { background: #dbe1ea; }
+    tr.person:hover { background: var(--hover); }
+    tr.total { font-weight: 700; background: #e8edf3; }
+    .name { font-weight: 650; white-space: nowrap; }
+    tr.person td.left { padding-left: 32px; color: #3f4654; font-weight: 500; }
+    table.sheet td.when { white-space: normal; }
+    tr.person .heads { display: none; }
+    tr.person.open .stats { display: none; }
+    tr.person.open .heads { display: inline; }
+    table.sheet > tbody > tr.person.open > td {
+      color: var(--head);
+      font-size: 13px;
+      font-weight: 650;
+      text-align: center;
+      vertical-align: middle;
+    }
+    table.sheet > tbody > tr.person.open > td.left {
+      color: var(--ink);
+      font-size: 15px;
+      font-weight: 500;
+      text-align: left;
+      vertical-align: middle;
+    }
+    table.sheet > tbody > tr.note-row > td {
+      font-weight: 400;
+      font-size: 13px;
+      color: var(--ink);
+      text-align: center;
+      vertical-align: middle;
+      overflow: hidden;
+      max-width: 0;
+    }
+    table.sheet > tbody > tr.note-row > td:last-child { text-align: left; }
+    .note-preview {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      background: none;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .note-preview span {
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .note-preview:hover span { color: #2563eb; }
+    .note-preview::after {
+      content: "";
+      flex: none;
+      width: 6px;
+      height: 6px;
+      border-right: 1.6px solid #98a2b3;
+      border-bottom: 1.6px solid #98a2b3;
+      transform: rotate(-45deg);
+      margin-top: 1px;
+    }
+    .note-pop {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(16, 24, 40, .22);
+    }
+    .note-pop[hidden] { display: none; }
+    .note-pop-card {
+      width: min(560px, 100%);
+      max-height: min(72vh, 640px);
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 18px 48px rgba(16, 24, 40, .18);
+      overflow: hidden;
+    }
+    .note-pop-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px 12px;
+      background: #f3f4f6;
+      border-bottom: 1px solid var(--line);
+    }
+    .note-pop-title { font-size: 14px; font-weight: 650; color: var(--head); }
+    .note-pop-meta { margin-top: 4px; font-size: 12px; color: var(--muted); }
+    .note-pop-x {
+      flex: none;
+      width: 28px;
+      height: 28px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: #6b7280;
+      font: 22px/1 inherit;
+      cursor: pointer;
+    }
+    .note-pop-x:hover { background: #e8eaef; color: var(--ink); }
+    .note-pop-text {
+      padding: 18px 20px 22px;
+      overflow: auto;
+      font-size: 14px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      color: var(--ink);
+    }
+    .err { color: var(--red); margin: 0 0 16px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+    <h1>Активности сейлз команд</h1>
+    <div class="bar">
+      <div class="modes" id="modes">
+        <button type="button" id="fio-toggle" data-act="fio">Сотрудники</button>
+        <button type="button" id="notes-toggle" data-act="notes">Заметки</button>
+        <button type="button" data-kind="звонок">Звонок</button>
+        <button type="button" data-kind="встреча">Встреча</button>
+      </div>
+      <div class="period">
+        <span>с</span>
+        <input type="date" id="from">
+        <span>по</span>
+        <input type="date" id="to">
+      </div>
+    </div>
+    </div>
+    <div id="err" class="err" hidden></div>
+    <div class="card">
+      <table class="sheet" id="sheet"></table>
+    </div>
+  </div>
+  <div id="note-pop" class="note-pop" hidden>
+    <div class="note-pop-card" role="dialog" aria-labelledby="note-pop-title">
+      <div class="note-pop-top">
+        <div>
+          <div class="note-pop-title" id="note-pop-title">Заметка</div>
+          <div class="note-pop-meta" id="note-pop-meta"></div>
+        </div>
+        <button type="button" class="note-pop-x" id="note-pop-x" aria-label="Закрыть">×</button>
+      </div>
+      <div class="note-pop-text" id="note-pop-text"></div>
+    </div>
+  </div>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const fmtAvg = (v) => {
+      const n = Number(v || 0);
+      if (!n) return "0";
+      if (Math.abs(n - Math.round(n)) < 1e-9) return String(Math.round(n));
+      return n.toFixed(2).replace(".", ",");
+    };
+    const fmtMin = (v) => {
+      if (v == null) return "0 мин";
+      const t = Math.round(Number(v) || 0);
+      const h = Math.floor(t / 60), m = t % 60;
+      if (h && m) return h + " ч " + m + " мин";
+      if (h) return h + " ч";
+      return m + " мин";
+    };
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+    const closeNote = () => { $("note-pop").hidden = true; };
+    const openNote = (btn) => {
+      const bits = [btn.dataset.date, btn.dataset.kind, btn.dataset.client, btn.dataset.products, btn.dataset.duration]
+        .filter((x) => x && x !== "—");
+      $("note-pop-meta").textContent = bits.join(" · ");
+      $("note-pop-text").textContent = btn.textContent.trim();
+      $("note-pop").hidden = false;
+    };
+    $("note-pop").onclick = (ev) => { if (ev.target.id === "note-pop") closeNote(); };
+    $("note-pop-x").onclick = closeNote;
+    document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeNote(); });
+
+    function peopleOf(teamId, people) {
+      return (people || []).filter((p) => p.team_id === teamId);
+    }
+
+    let report = null;
+    let mode = 1;
+
+    function viewPeople() {
+      return (report.people || []).map((p) => {
+        const items = (p.items || []).filter(notePasses);
+        let client = 0, adjacent = 0, external = 0;
+        for (const n of items) {
+          if (n.bucket === "client") {
+            client += 1;
+            external += Number(n.minutes || 0);
+          } else if (n.bucket === "adjacent") adjacent += 1;
+        }
+        return Object.assign({}, p, {
+          items, client, adjacent, external_minutes: external, notes: items.length,
+        });
+      });
+    }
+
+    function viewSummary(people) {
+      const rows = (report.summary || []).filter((row) => row.label !== "Итого").map((row) => {
+        const team = people.filter((p) => p.team_id === row.team_id);
+        const client = team.reduce((s, p) => s + p.client, 0);
+        const adjacent = team.reduce((s, p) => s + p.adjacent, 0);
+        const external = team.reduce((s, p) => s + p.external_minutes, 0);
+        const staff = Number(row.staff || 0) || team.length;
+        return Object.assign({}, row, {
+          client, adjacent, external_minutes: external,
+          avg_client: staff ? client / staff : 0,
+          avg_adjacent: staff ? adjacent / staff : 0,
+        });
+      });
+      const total = rows.reduce((acc, row) => {
+        acc.client += row.client;
+        acc.adjacent += row.adjacent;
+        acc.external_minutes += row.external_minutes;
+        acc.staff += Number(row.staff || 0);
+        return acc;
+      }, { client: 0, adjacent: 0, external_minutes: 0, staff: 0 });
+      rows.push({
+        label: "Итого",
+        team_id: "",
+        client: total.client,
+        adjacent: total.adjacent,
+        external_minutes: total.external_minutes,
+        avg_client: total.staff ? total.client / total.staff : 0,
+        avg_adjacent: total.staff ? total.adjacent / total.staff : 0,
+      });
+      return rows;
+    }
+
+    function noteDate(n) {
+      const iso = String(n.date || "");
+      const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      const day = m ? (m[3] + "." + m[2] + "." + m[1]) : iso;
+      const time = String(n.start || "").trim();
+      return [day, time].filter(Boolean).join(" ") || "—";
+    }
+
+    const NOTE_COLS = ["Дата", "Тип", "Контрагент", "Участники от банка", "Длительность", "Заметка"];
+
+    function fieldValue(n, key) {
+      if (key === "kind") {
+        if (n.contact === "звонок" || n.contact === "встреча") return n.contact;
+        return n.kind || "—";
+      }
+      return "";
+    }
+
+    // Горит хотя бы одна из «Звонок» / «Встреча»; обе — без фильтра.
+    const picked = { kind: new Set(["встреча"]) };
+
+    function notePasses(n) {
+      if (picked.kind.size === 1 && !picked.kind.has(fieldValue(n, "kind"))) return false;
+      return true;
+    }
+
+    function personRows(teamId, people) {
+      return peopleOf(teamId, people).map((p, i) => {
+        const pid = teamId + "-" + i;
+        const items = p.items || [];
+        const open = mode >= 3 && items.length;
+        const stats = [p.client || 0, p.adjacent || 0, p.client || 0, p.adjacent || 0, fmtMin(p.external_minutes || 0), "—"];
+        const cells = stats.map((value, k) => `
+            <td><span class="stats">${value}</span><span class="heads">${esc(NOTE_COLS[k])}</span></td>`).join("");
+        const notes = items.map((n) => {
+          const kind = fieldValue(n, "kind");
+          const when = noteDate(n);
+          return `
+          <tr class="note-row" data-for="${pid}" ${open ? "" : "hidden"}>
+            <td></td>
+            <td class="when">${esc(when)}</td>
+            <td>${esc(kind)}</td>
+            <td class="left">${esc(n.client)}</td>
+            <td class="left">${esc(n.bank || "—")}</td>
+            <td>${esc(n.duration)}</td>
+            <td class="left"><button type="button" class="note-preview" data-date="${esc(when)}" data-kind="${esc(kind)}" data-client="${esc(n.client)}" data-duration="${esc(n.duration)}"><span>${esc(n.text)}</span></button></td>
+          </tr>`;
+        }).join("");
+        return `
+          <tr class="person${open ? " open" : ""}" data-team="${esc(teamId)}" data-open="${pid}" ${mode >= 2 ? "" : "hidden"}>
+            <td class="left"><span class="name">${esc(p.name)}</span></td>
+            ${cells}
+          </tr>
+          ${notes}`;
+      }).join("");
+    }
+
+    function render() {
+      const people = viewPeople();
+      const summary = viewSummary(people);
+      const data = { people, summary };
+      const head = `
+        <thead><tr>
+          <th>Команда</th>
+          <th>Клиентские активности</th>
+          <th>Активности со смежниками</th>
+          <th>Среднее количество активностей на сотрудника</th>
+          <th>Среднее количество активностей со смежниками на сотрудника</th>
+          <th>Всего времени на внешних активностях</th>
+          <th>Отклонения по посещаемости</th>
+        </tr></thead>`;
+      const body = (data.summary || []).map((row) => {
+        const total = row.label === "Итого";
+        const teamRow = `
+          <tr class="${total ? "total" : "team"}" ${total ? "" : `data-team="${esc(row.team_id)}"`}>
+            <td class="left"><span class="name">${esc(row.label)}</span></td>
+            <td>${row.client || 0}</td>
+            <td>${row.adjacent || 0}</td>
+            <td>${fmtAvg(row.avg_client)}</td>
+            <td>${fmtAvg(row.avg_adjacent)}</td>
+            <td>${fmtMin(row.external_minutes)}</td>
+            <td>—</td>
+          </tr>`;
+        if (total) return `<tbody>${teamRow}</tbody>`;
+        return `<tbody>${teamRow}${personRows(row.team_id, data.people)}</tbody>`;
+      }).join("");
+      $("sheet").innerHTML = head + body;
+      lockColumns();
+      $("sheet").onclick = (ev) => {
+        const note = ev.target.closest(".note-preview");
+        if (note) {
+          openNote(note);
+          ev.stopPropagation();
+          return;
+        }
+        const team = ev.target.closest("tr.team");
+        if (team) {
+          $("sheet").querySelectorAll(`tr.person[data-team="${team.dataset.team}"]`).forEach((row) => {
+            row.hidden = !row.hidden;
+            if (row.hidden) setPersonNotes(row, false);
+          });
+        } else {
+          const person = ev.target.closest("tr.person");
+          if (person) setPersonNotes(person, !person.classList.contains("open"));
+        }
+        pinTeams();
+      };
+      pinHead();
+    }
+
+    function pinTeams() {
+      const headCell = document.querySelector("table.sheet > thead th");
+      const rows = [...document.querySelectorAll("table.sheet tr.team, table.sheet tr.total")];
+      [...rows, ...document.querySelectorAll("table.sheet tr.person.stuck")].forEach((row) => {
+        row.classList.remove("stuck");
+        row.querySelectorAll("td").forEach((td) => { td.style.transform = ""; });
+      });
+      if (!headCell) return;
+      const stick = headCell.getBoundingClientRect().bottom - 1;
+      const tops = rows.map((row) => row.getBoundingClientRect().top);
+      const heights = rows.map((row) => row.getBoundingClientRect().height);
+      for (let i = 0; i < rows.length; i++) {
+        if (!rows[i].classList.contains("team")) continue;
+        const nextTop = i + 1 < rows.length ? tops[i + 1] : Infinity;
+        if (tops[i] >= stick - 0.5 || nextTop <= stick + 0.5) continue;
+        const shift = Math.min(stick, nextTop - heights[i]) - tops[i];
+        if (shift <= 0.5) continue;
+        rows[i].classList.add("stuck");
+        rows[i].querySelectorAll("td").forEach((td) => {
+          td.style.transform = "translateY(" + shift + "px)";
+        });
+        pinPerson(rows[i], tops[i] + shift + heights[i]);
+        break;
+      }
+    }
+
+    function pinPerson(team, stick) {
+      for (const person of team.parentElement.querySelectorAll("tr.person.open")) {
+        const box = person.getBoundingClientRect();
+        if (box.top >= stick - 0.5) continue;
+        const notes = team.parentElement.querySelectorAll(`tr.note-row[data-for="${person.dataset.open}"]`);
+        const end = notes.length ? notes[notes.length - 1].getBoundingClientRect().bottom : box.bottom;
+        if (end <= stick + 0.5) continue;
+        const shift = Math.min(stick, end - box.height) - box.top;
+        if (shift <= 0.5) continue;
+        person.classList.add("stuck");
+        person.querySelectorAll("td").forEach((td) => {
+          td.style.transform = "translateY(" + shift + "px)";
+        });
+        return;
+      }
+    }
+
+    function setPersonNotes(person, open) {
+      const rows = $("sheet").querySelectorAll(`tr.note-row[data-for="${person.dataset.open}"]`);
+      if (!rows.length) return;
+      person.classList.toggle("open", open);
+      rows.forEach((row) => { row.hidden = !open; });
+    }
+
+    function lockColumns() {
+      const table = $("sheet");
+      const ths = [...table.querySelectorAll(":scope > thead > tr > th")];
+      if (!ths.length) return;
+      table.style.tableLayout = "auto";
+      ths.forEach((th) => { th.style.width = ""; });
+      const people = [...table.querySelectorAll("tr.person")];
+      const notes = [...table.querySelectorAll("tr.note-row")];
+      const opens = people.filter((row) => row.classList.contains("open"));
+      people.forEach((row) => {
+        row.dataset.lockHidden = row.hidden ? "1" : "";
+        row.hidden = false;
+        row.classList.remove("open");
+      });
+      notes.forEach((row) => {
+        row.dataset.lockHidden = row.hidden ? "1" : "";
+        row.hidden = true;
+      });
+      const widths = ths.map((th) => th.getBoundingClientRect().width);
+      ths.forEach((th, i) => { th.style.width = widths[i] + "px"; });
+      table.style.tableLayout = "fixed";
+      people.forEach((row) => {
+        row.hidden = row.dataset.lockHidden === "1";
+        delete row.dataset.lockHidden;
+      });
+      notes.forEach((row) => {
+        row.hidden = row.dataset.lockHidden === "1";
+        delete row.dataset.lockHidden;
+      });
+      opens.forEach((row) => row.classList.add("open"));
+    }
+
+    function pinHead() {
+      const top = document.querySelector(".top");
+      if (top) document.documentElement.style.setProperty("--pin", top.getBoundingClientRect().height + "px");
+      pinTeams();
+    }
+    window.addEventListener("resize", () => { lockColumns(); pinHead(); });
+    let pinFrame = 0;
+    window.addEventListener("scroll", () => {
+      if (pinFrame) return;
+      pinFrame = requestAnimationFrame(() => { pinFrame = 0; pinTeams(); });
+    }, { passive: true });
+
+    async function load(from, to) {
+      $("err").hidden = true;
+      try {
+        const q = from && to ? ("?date_from=" + encodeURIComponent(from) + "&date_to=" + encodeURIComponent(to)) : "";
+        const res = await fetch("/api/report" + q);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "не собрал отчёт");
+        report = data;
+        personOpen.clear();
+        $("from").value = data.from || "";
+        $("to").value = data.to || "";
+        render();
+      } catch (e) {
+        $("err").hidden = false;
+        $("err").textContent = e.message || String(e);
+      }
+    }
+
+    function chosenRange() {
+      const from = $("from").value;
+      const to = $("to").value;
+      if (!from || !to || !report) return;
+      if (from === report.from && to === report.to) return;
+      load(from, to);
+    }
+    $("from").onchange = chosenRange;
+    $("to").onchange = chosenRange;
+
+    function syncModes() {
+      $("fio-toggle").classList.toggle("on", mode >= 2);
+      $("notes-toggle").classList.toggle("on", mode >= 3);
+      document.querySelectorAll("#modes [data-kind]").forEach((btn) => {
+        btn.classList.toggle("on", picked.kind.has(btn.dataset.kind));
+      });
+    }
+
+    $("modes").onclick = (ev) => {
+      const btn = ev.target.closest("button");
+      if (!btn || !report) return;
+      if (btn.dataset.kind) {
+        const kind = btn.dataset.kind;
+        if (!picked.kind.has(kind)) picked.kind.add(kind);
+        else if (picked.kind.size > 1) picked.kind.delete(kind);
+        else return;
+        syncModes();
+        applyFind();
+        return;
+      }
+      personOpen.clear();
+      if (btn.dataset.act === "fio") mode = mode >= 2 ? 1 : 2;
+      if (btn.dataset.act === "notes") mode = mode >= 3 ? 2 : 3;
+      syncModes();
+      render();
+    };
+
+    // Раскрытые сейлзы переживают перерисовку фильтром. У кого сейчас нет заметок — помним прежнее.
+    const personOpen = new Map();
+
+    function rememberPeople() {
+      const shown = new Map();
+      $("sheet").querySelectorAll("tr.person").forEach((row) => {
+        const pid = row.dataset.open;
+        shown.set(pid, !row.hidden);
+        if ($("sheet").querySelector(`tr.note-row[data-for="${pid}"]`)) personOpen.set(pid, row.classList.contains("open"));
+      });
+      return shown;
+    }
+
+    function restorePeople(shown) {
+      $("sheet").querySelectorAll("tr.person").forEach((row) => {
+        const pid = row.dataset.open;
+        if (shown.has(pid)) row.hidden = !shown.get(pid);
+        if (personOpen.has(pid)) setPersonNotes(row, personOpen.get(pid) && !row.hidden);
+      });
+    }
+
+    function applyFind() {
+      if (!report) return;
+      const y = window.scrollY;
+      const shown = rememberPeople();
+      render();
+      restorePeople(shown);
+      if (window.scrollY !== y) window.scrollTo(0, y);
+      pinTeams();
+    }
+
+    syncModes();
+    load();
+  </script>
+</body>
+</html>
